@@ -32,7 +32,7 @@ $iterations = 50
 foreach ($scenario in $scenarios) {
     for ($i = $start; $i -le $end; $i++) {
         $power = [math]::Pow(2, $i)
-        for ($i = 0; $i -lt $array.Count; $i++) {
+        for ($k = 0; $k -lt $iterations; $k++) {
             Write-Host "Executing $exePath with argument 2048 2048 100 $power for scenario $scenario"
             Start-Process -FilePath $exePath -ArgumentList "$scenario 2048 2048 100 $power"  -Wait
         }
@@ -46,14 +46,14 @@ $scenarios = @(
     "matmult_vcma"
 )
 
-$start = 8
-$end = 2
+$start = 2
+$end = 8
 $iterations = 1
 
 foreach ($scenario in $scenarios) {
     for ($i = $start; $i -le $end; $i++) {
         $power = [math]::Pow(2, $i)
-        for ($i = 0; $i -lt $array.Count; $i++) {
+        for ($l = 0; $l -lt $iterations; $l++) {
             Write-Host "Executing $exePath with argument $power $power $power for scenario $scenario"
             Start-Process -FilePath $exePath -ArgumentList "$scenario $power $power $power"  -Wait
         }
