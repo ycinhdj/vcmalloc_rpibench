@@ -1,4 +1,5 @@
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import os
@@ -77,6 +78,8 @@ for operation in operations:
             df_i = df_i.apply(pd.to_numeric, errors='coerce')
             print(df_i)
 
+            df_i_full = df_i.copy()
+
             if use_percentages:
                 for ref in reference:
                     if ref in df_i.columns:
@@ -87,12 +90,14 @@ for operation in operations:
                 #remove the reference column
                 df_i = df_i.drop(columns=ref)
 
-            #fig, axes = plt.subplots(nrows=2, gridspec_kw=dict(height_ratios=[3,1]))
-            fig, axes = plt.subplots(nrows=1)
-            df_i.plot(ax = axes, kind='bar', use_index = True, width=.8, color=bnw, edgecolor='black', linewidth=.1)
-            axes.legend(loc = "best", fontsize="5", ncol=3)
+            fig, axes = plt.subplots(nrows=2, gridspec_kw=dict(height_ratios=[1,.5]))
+            plotaxe = axes[0]
+            #fig, axes = plt.subplots(nrows=1)
+           
+            df_i.plot(ax = plotaxe, kind='bar', use_index = True, width=.8, color=bnw, edgecolor='black', linewidth=.1)
+            plotaxe.legend(loc = "best", fontsize="8", ncol=3)
             
-            axes.tick_params(axis='both', which='major', labelsize=6)
+            plotaxe.tick_params(axis='both', which='major', labelsize=8)
             ylabel = ytype if not use_percentages else f"% of execution \n{ytype} reduction"
 
             if use_percentages:
@@ -100,60 +105,48 @@ for operation in operations:
             else:
                 ylabel = f"{ytype} ({yunit})" if yunit != "None" else f"{ytype}"
 
-            axes.set_ylabel(ylabel, fontsize=6)
-            axes.set_xlabel(xtype, fontsize=6)
+            plotaxe.set_ylabel(ylabel, fontsize=8)
+            plotaxe.set_xlabel(xtype, fontsize=8)
+            
+            plotaxe.set_yticks(plotaxe.get_yticks())
+            
+            x_labels = [abbreviate_number(x._text, xabbreviation_type) for x in plotaxe.get_xticklabels()]
+            plotaxe.set_xticklabels(x_labels)
             
             
-            x_labels = [abbreviate_number(x._text, xabbreviation_type) for x in axes.get_xticklabels()]
-            #print(x_labels)
-            axes.set_xticklabels(x_labels)
-
-            ylabels = [i for i in axes.get_yticklabels()]
-            axes.set_yticks(axes.get_yticks())
-            y_labels = [abbreviate_number(x._text, yabbreviation_type) for x in axes.get_yticklabels()]
-            #axes.yaxis.set_major_locator(mticker.FixedLocator(y_labels))
-            #get ticks
-            axes.set_yticklabels(y_labels)
+            y_labels = [abbreviate_number(x._text, yabbreviation_type) for x in plotaxe.get_yticklabels()]
+            plotaxe.set_yticklabels(y_labels)
 
 
             #table
-            """
-            rowslabels = df.columns.tolist()
+            
+            rowslabels = df_i_full.columns.tolist()
             colslabels = ['min', 'mean', 'max']
             tabledata = []
             for i in rowslabels:
-                data = [x for x in [df[i].min(), df[i].mean(), df[i].max()]]
-                try:
-                    #abbreviate numbers according to the operation
-                    data = [abbreviate_number(x, "Bytes" if "memory" in operation else "Normal") for x in data]    
-                except BaseException:
-                    pass
+                data = [f"{x:.2f}" if isinstance(x, float) else str(x) for x in [df_i_full[i].min(), df_i_full[i].mean(), df_i_full[i].max()]]
                 tabledata.append(data)
             axes[1].axis('off')
-            axes[1] = plt.table(
+            
+            table = plt.table(
                 cellText=tabledata,
                 rowLabels=rowslabels,
                 colLabels=colslabels,
                 loc='center',
                 cellLoc='center',
                 colWidths=[.12 for x in colslabels])
-            axes[1].scale(1,1.7)    
-            axes[1].auto_set_font_size(False)
-            axes[1].set_fontsize(5)
-            """
+            
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            table.scale(2.5, 3)
 
+            fig.set_size_inches(2.5, 2.2)
+            fig.tight_layout(h_pad=0)
+            fig.subplots_adjust(top=.95, bottom=.1)
 
-            fig.set_size_inches(2, 1.33)
-            #fig.set_size_inches(2, 1.2)
-            fig.tight_layout(h_pad=0, w_pad=0)
-
-            #make the figure as compact as possible
-            fig.subplots_adjust(top=.95, bottom=.35, left=.25, right=.99)
-
-            #save figure in svg format in folder "plots" and create folder if it doesn't exist
             
             #plt.show()
-            #plt.show()
+            
             folder_name = f"plots"
             if not os.path.exists(folder_name):
                 os.makedirs(folder_name)
