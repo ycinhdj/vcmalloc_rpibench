@@ -2,12 +2,13 @@ $exePath = ".\vcmalloc_rpibench.exe"
 
 $scenarios = @(
     "knn_m",
-    "knn_vcm"
+    "knn_vcm",
+    "knn_vcma"
 )
 
 $start = 10
 $end = 17
-$iterations = 50
+$iterations = 5
 
 foreach ($scenario in $scenarios) {
     for ($i = $start; $i -le $end; $i++) {
@@ -25,16 +26,16 @@ $scenarios = @(
     "kmeans_vcma"
 )
 
-$start = 0
-$end = 8
-$iterations = 50
+$start = 10
+$end = 17
+$iterations = 1
 
 foreach ($scenario in $scenarios) {
     for ($i = $start; $i -le $end; $i++) {
         $power = [math]::Pow(2, $i)
         for ($k = 0; $k -lt $iterations; $k++) {
-            Write-Host "Executing $exePath with argument 2048 2048 100 $power for scenario $scenario"
-            Start-Process -FilePath $exePath -ArgumentList "$scenario 2048 2048 100 $power"  -Wait
+            Write-Host "Executing $exePath with argument $power 1024 100 10 for scenario $scenario"
+            Start-Process -FilePath $exePath -ArgumentList "$scenario $power 1024 100 10"  -Wait
         }
         
     }
