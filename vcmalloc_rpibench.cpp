@@ -51,10 +51,6 @@ void log_csv(
 }
 
 
-typedef struct {
-    double* features;
-    size_t label;
-} knnPoint;
 
 double euclideanDistance(const double* a, const double* b, size_t dimensions) {
     double distance = 0.0;
@@ -103,6 +99,7 @@ void kmeans(double** centroids, double** points, size_t* assignments, size_t* co
         memset(count, 0, k * sizeof(size_t));
     }
 }
+
 void kmeans_affine(double** centroids, double** points, size_t* assignments, size_t* count, size_t k, size_t pointsCount, size_t dimensions, size_t Iter) {
     
     double* affine_centroids = centroids[0];
@@ -110,10 +107,12 @@ void kmeans_affine(double** centroids, double** points, size_t* assignments, siz
     
     for (size_t iter = 0; iter < Iter; ++iter) {
         for (size_t i = 0; i < pointsCount; ++i) {
-            double minDistance = euclideanDistance(points[i], centroids[0], dimensions);
+            //double minDistance = euclideanDistance(points[i], centroids[0], dimensions);
+            double minDistance = euclideanDistance(affine_points + i * dimensions, affine_centroids, dimensions);
             size_t closest = 0;
             for (size_t j = 1; j < k; ++j) {
-                double distance = euclideanDistance(points[i], centroids[j], dimensions);
+                //double distance = euclideanDistance(points[i], centroids[j], dimensions);
+                double distance = euclideanDistance(affine_points + i * dimensions, affine_centroids + j * dimensions, dimensions);
                 if (distance < minDistance) {
                     minDistance = distance;
                     closest = j;
@@ -152,10 +151,11 @@ void kmeans_affine(double** centroids, double** points, size_t* assignments, siz
     }
 }
 
-void knn(knnPoint* dataset, size_t datasetSize, knnPoint testPoint, size_t k, size_t dimensions, size_t* nearestNeighbors, double* distances) {
+
+void knn(double** dataset_features, size_t* dataset_labels, size_t datasetSize, double* testpoint_features, size_t k, size_t dimensions, size_t* nearestNeighbors, double* distances) {
 
     for (size_t i = 0; i < datasetSize; ++i) {
-        distances[i] = euclideanDistance(testPoint.features, dataset[i].features, dimensions);
+        distances[i] = euclideanDistance(testpoint_features, dataset_features[i], dimensions);
     }
 
     for (size_t i = 0; i < k; ++i) {
@@ -169,10 +169,37 @@ void knn(knnPoint* dataset, size_t datasetSize, knnPoint testPoint, size_t k, si
             }
         }
 
-        nearestNeighbors[i] = dataset[minIndex].label;
+        nearestNeighbors[i] = dataset_labels[minIndex];
         distances[minIndex] = HUGE_VAL; // Set to a large value to exclude from further consideration
     }
 }
+
+void knn_affine(double** dataset_features, size_t* dataset_labels, size_t datasetSize, double* testpoint_features, size_t k, size_t dimensions, size_t* nearestNeighbors, double* distances) {
+
+	double* affine_dataset_features = dataset_features[0];
+	double* affine_testpoint_features = testpoint_features;
+
+    for (size_t i = 0; i < datasetSize; ++i) {
+		//distances[i] = euclideanDistance(testpoint_features, dataset_features[i], dimensions);
+		distances[i] = euclideanDistance(affine_testpoint_features, affine_dataset_features + i * dimensions, dimensions);
+	}
+
+    for (size_t i = 0; i < k; ++i) {
+        double minDistance = HUGE_VAL;
+		size_t minIndex = -1;
+
+        for (size_t j = 0; j < datasetSize; ++j) {
+            if (distances[j] < minDistance) {
+				minDistance = distances[j];
+				minIndex = j;
+			}
+		}
+
+		nearestNeighbors[i] = dataset_labels[minIndex];
+		distances[minIndex] = HUGE_VAL; // Set to a large value to exclude from further consideration
+	}
+}
+
 
 void matmult(double** A, double** B, double** C, size_t m, size_t n, size_t p) {
     for (size_t i = 0; i < m; ++i) {
@@ -184,6 +211,7 @@ void matmult(double** A, double** B, double** C, size_t m, size_t n, size_t p) {
 		}
 	}
 }
+
 void matmult_affine(double** A, double** B, double** C, size_t m, size_t n, size_t p) {
 	double* affine_A = A[0];
 	double* affine_B = B[0];
@@ -202,6 +230,7 @@ void matmult_affine(double** A, double** B, double** C, size_t m, size_t n, size
 
 
 
+
 int knn_m(int argc, char* argv[]) {
     const char* allocator_name = "m";
 
@@ -216,26 +245,25 @@ int knn_m(int argc, char* argv[]) {
     dimensions = atoi(argv[2]);
     k = atoi(argv[3]);
 
-    knnPoint* dataset = (knnPoint*)malloc(datasetSize * sizeof(knnPoint));
+    double** dataset_features = (double**)malloc(datasetSize * sizeof(double*));
     for (size_t i = 0; i < datasetSize; ++i) {
-        dataset[i].features = (double*)malloc(dimensions * sizeof(double));
-        for (size_t j = 0; j < dimensions; ++j)
-            dataset[i].features[j] = i * dimensions + j;
-        dataset[i].label = i;
-    }
+		dataset_features[i] = (double*)malloc(dimensions * sizeof(double));
+		for (size_t j = 0; j < dimensions; ++j)
+			dataset_features[i][j] = i * dimensions + j;
+	}
 
-    knnPoint testPoint;
-    testPoint.features = (double*)malloc(dimensions * sizeof(double));
-    for (size_t j = 0; j < dimensions; ++j)
-        testPoint.features[j] = j;
-    testPoint.label = -1;
+    size_t* dataset_labels = (size_t*)malloc(datasetSize * sizeof(size_t));
+    for (size_t i = 0; i < datasetSize; ++i) dataset_labels[i] = i;
+
+    double* testPoint_features = (double*)malloc(dimensions * sizeof(double));
+    for (size_t j = 0; j < dimensions; ++j) testPoint_features[j] = j;
 
     size_t* nearestNeighbors = (size_t*)malloc(k * sizeof(size_t));
 
     double* distances = (double*)malloc(datasetSize * sizeof(double));
 
     clock_t start = clock();
-    knn(dataset, datasetSize, testPoint, k, dimensions, nearestNeighbors, distances);
+    knn(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
     clock_t end = clock();
     double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
 
@@ -259,92 +287,168 @@ int knn_m(int argc, char* argv[]) {
 
 
     for (size_t i = 0; i < datasetSize; ++i) {
-        free(dataset[i].features);
+        free(dataset_features[i]);
     }
-    free(dataset);
+    free(dataset_features);
 
-    free(testPoint.features);
+    free(testPoint_features);
     free(nearestNeighbors);
     free(distances);
 
     return 0;
 }
-int knn_vcm(int argc, char* argv[]) {
-    const char* allocator_name = "vcm";
 
-    size_t datasetSize, dimensions, k;
+int knn_vcm(int argc, char* argv[]) {
+	const char* allocator_name = "vcm";
+
+	size_t datasetSize, dimensions, k;
 
     if (argc != 4) {
-        printf("Usage: %s <dataset size> <dimensions> <k>\n", argv[0]);
-        return 1;
-    }
+		printf("Usage: %s <dataset size> <dimensions> <k>\n", argv[0]);
+		return 1;
+	}
 
-    datasetSize = atoi(argv[1]);
-    dimensions = atoi(argv[2]);
-    k = atoi(argv[3]);
+	datasetSize = atoi(argv[1]);
+	dimensions = atoi(argv[2]);
+	k = atoi(argv[3]);
 
-    size_t total_size =
-        datasetSize * sizeof(knnPoint) +
-        datasetSize * dimensions * sizeof(double) +
+	size_t total_size =
+		datasetSize * sizeof(double*) +
+		datasetSize * dimensions * sizeof(double) +
+		datasetSize * sizeof(size_t) +
         dimensions * sizeof(double) +
-        k * sizeof(size_t) +
-        datasetSize * sizeof(double);
+		k * sizeof(size_t) +
+		datasetSize * sizeof(double);
 
-    size_t total_allocations = 
-        1 + 
-        datasetSize +
-        1 +
-        1 +
+	size_t total_allocations =
+		1 +
+		datasetSize +
+		1 +
+		1 +
+		1 +
         1;
 
-    hca_init(total_size, total_allocations, 1);
+	hca_init(total_size, total_allocations, 1);
 
-    knnPoint* dataset = (knnPoint*)vca_malloc(datasetSize * sizeof(knnPoint));
+	double** dataset_features = (double**)vca_malloc(datasetSize * sizeof(double*));
     for (size_t i = 0; i < datasetSize; ++i) {
-        dataset[i].features = (double*)vca_malloc(dimensions * sizeof(double));
+		dataset_features[i] = (double*)vca_malloc(dimensions * sizeof(double));
+		for (size_t j = 0; j < dimensions; ++j)
+			dataset_features[i][j] = i * dimensions + j;
+	}
 
-        for (size_t j = 0; j < dimensions; ++j)
-            dataset[i].features[j] = i * dimensions + j;
-        dataset[i].label = i;
-    
-    }
+	size_t* dataset_labels = (size_t*)vca_malloc(datasetSize * sizeof(size_t));
+	for (size_t i = 0; i < datasetSize; ++i) dataset_labels[i] = i;
 
-    knnPoint testPoint;
-    testPoint.features = (double*)vca_malloc(dimensions * sizeof(double));
+	double* testPoint_features = (double*)vca_malloc(dimensions * sizeof(double));
+	for (size_t j = 0; j < dimensions; ++j) testPoint_features[j] = j;
 
-    for (size_t j = 0; j < dimensions; ++j)
-        testPoint.features[j] = j;
-    testPoint.label = -1;
+	size_t* nearestNeighbors = (size_t*)vca_malloc(k * sizeof(size_t));
 
-    size_t* nearestNeighbors = (size_t*)vca_malloc(k * sizeof(size_t));
+	double* distances = (double*)vca_malloc(datasetSize * sizeof(double));
 
-    double* distances = (double*)vca_malloc(datasetSize * sizeof(double));
-
-    clock_t start = clock();
-    knn(dataset, datasetSize, testPoint, k, dimensions, nearestNeighbors, distances);
-    clock_t end = clock();
-    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+	clock_t start = clock();
+	knn(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
+	clock_t end = clock();
+	double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
 
     log_csv(
-        "vcmalloc_rpibench_knn.csv",
-        "knn",
-        to_string(datasetSize).c_str(),
-        to_string(time_spent).c_str(),
-        allocator_name,
+		"vcmalloc_rpibench_knn.csv",
+		"knn",
+
+		to_string(datasetSize).c_str(),
+		to_string(time_spent).c_str(),
+		allocator_name,
+
         "dataset size",
         "time",
         "allocator",
+
         "",
         "seconds",
         ""
-
     );
+    hcm_clear(&hca_hcm);
+
+	return 0;
+}
+
+int knn_vcma(int argc, char* argv[]) {
+	const char* allocator_name = "vcma";
+
+	size_t datasetSize, dimensions, k;
+
+    if (argc != 4) {
+		printf("Usage: %s <dataset size> <dimensions> <k>\n", argv[0]);
+		return 1;
+	}
+
+	datasetSize = atoi(argv[1]);
+	dimensions = atoi(argv[2]);
+	k = atoi(argv[3]);
+
+	size_t total_size =
+		datasetSize * sizeof(double*) +
+		datasetSize * dimensions * sizeof(double) +
+		datasetSize * sizeof(size_t) +
+        dimensions * sizeof(double) +
+		k * sizeof(size_t) +
+		datasetSize * sizeof(double);
+
+	size_t total_allocations =
+		1 +
+		datasetSize +
+		1 +
+		1 +
+		1 +
+		1;
+
+	hca_init(total_size, total_allocations, 1);
+
+	double** dataset_features = (double**)vca_malloc(datasetSize * sizeof(double*));
+    for (size_t i = 0; i < datasetSize; ++i) {
+		dataset_features[i] = (double*)vca_malloc(dimensions * sizeof(double));
+		for (size_t j = 0; j < dimensions; ++j)
+			dataset_features[i][j] = i * dimensions + j;
+	}
+
+	size_t* dataset_labels = (size_t*)vca_malloc(datasetSize * sizeof(size_t));
+	for (size_t i = 0; i < datasetSize; ++i) dataset_labels[i] = i;
+
+	double* testPoint_features = (double*)vca_malloc(dimensions * sizeof(double));
+	for (size_t j = 0; j < dimensions; ++j) testPoint_features[j] = j;
+
+	size_t* nearestNeighbors = (size_t*)vca_malloc(k * sizeof(size_t));
+
+	double* distances = (double*)vca_malloc(datasetSize * sizeof(double));
+
+	clock_t start = clock();
+	knn_affine(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
+	clock_t end = clock();
+	double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+
+    log_csv(
+		"vcmalloc_rpibench_knn.csv",
+		"knn",
+
+		to_string(datasetSize).c_str(),
+		to_string(time_spent).c_str(),
+		allocator_name,
+
+        "dataset size",
+		"time",
+		"allocator",
+
+		"",
+		"seconds",
+		""
+	);
 
     hcm_clear(&hca_hcm);
-    
 
     return 0;
 }
+
 
 int kmeans_m(int argc, char* argv[]) {
     const char* allocator_name = "m";
@@ -392,11 +496,11 @@ int kmeans_m(int argc, char* argv[]) {
         "vcmalloc_rpibench_kmeans.csv",
         "kmeans",
 
-        to_string(maxIterations).c_str(),
+        to_string(pointsCount).c_str(),
         to_string(elapsed).c_str(),
         allocator_name,
 
-        "iterations",
+        "dataset size",
         "time",
         "allocator",
 
@@ -420,6 +524,7 @@ int kmeans_m(int argc, char* argv[]) {
 
     return 0;
 }
+
 int kmeans_vcm(int argc, char* argv[]) {
     const char* allocator_name = "vcm";
 
@@ -485,11 +590,11 @@ int kmeans_vcm(int argc, char* argv[]) {
         "vcmalloc_rpibench_kmeans.csv",
         "kmeans",
 
-        to_string(maxIterations).c_str(),
+        to_string(pointsCount).c_str(),
         to_string(elapsed).c_str(),
         allocator_name,
 
-        "iterations",
+        "dataset size",
         "time",
         "allocator",
 
@@ -502,6 +607,7 @@ int kmeans_vcm(int argc, char* argv[]) {
 
     return 0;
 }
+
 int kmeans_vcma(int argc, char* argv[]) {
     const char* allocator_name = "vcma";
 
@@ -567,11 +673,11 @@ int kmeans_vcma(int argc, char* argv[]) {
         "vcmalloc_rpibench_kmeans.csv",
         "kmeans",
 
-        to_string(maxIterations).c_str(),
+        to_string(pointsCount).c_str(),
         to_string(elapsed).c_str(),
         allocator_name,
 
-        "iterations",
+        "dataset size",
         "time",
         "allocator",
 
@@ -584,6 +690,7 @@ int kmeans_vcma(int argc, char* argv[]) {
 
     return 0;
 }
+
 
 int matmult_m(int argc, char* argv[]) {
     
@@ -692,6 +799,7 @@ int matmult_m(int argc, char* argv[]) {
 
 	return 0;
 }
+
 int matmult_vcm(int argc, char* argv[]) {
 
     const char* allocator_name = "vcm";
@@ -806,6 +914,7 @@ int matmult_vcm(int argc, char* argv[]) {
 
     return 0;
 }
+
 int matmult_vcma(int argc, char* argv[]) {
 
     const char* allocator_name = "vcma";
@@ -929,6 +1038,7 @@ int matmult_vcma(int argc, char* argv[]) {
     return 0;
 }
 
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
 		printf("Usage: %s <operation> <args>\n", argv[0]);
@@ -943,6 +1053,9 @@ int main(int argc, char* argv[]) {
     else if (operation == "knn_vcm") {
 		return knn_vcm(argc - 1, argv + 1);
 	}
+    else if (operation == "knn_vcma") {
+        return knn_vcma(argc - 1, argv + 1);
+    }
     else if (operation == "kmeans_m") {
 		return kmeans_m(argc - 1, argv + 1);
 	}
