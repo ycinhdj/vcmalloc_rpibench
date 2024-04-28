@@ -3,6 +3,8 @@
 #include <math.h>
 #include <time.h>
 #include <string>
+#include <windows.h>
+#include <psapi.h>
 
 extern "C" {
 #include "vcmalloc.h"
@@ -12,7 +14,19 @@ extern "C" {
 
 using namespace std;
 
-void log_csv(
+struct state {
+	clock_t clock;
+    PROCESS_MEMORY_COUNTERS ps;
+};
+
+state get_state() {
+    state s;
+    s.clock = clock();
+    GetProcessMemoryInfo(GetCurrentProcess(), &s.ps, sizeof(s.ps));
+    return s;
+}
+
+void metric2csv(
     const char* filename,
     const char* operation,
     const char* x,
@@ -50,6 +64,55 @@ void log_csv(
     }
 }
 
+void metrics2csv(
+    const char* filename,
+    const char* operation,
+    const char* x,
+    const char* z,
+    const char* xtype,
+    const char* ztype,
+    const char* xunit,
+    const char* zunit,
+    state start,
+    state end
+) {
+	double time_spent = (double)(end.clock - start.clock) / CLOCKS_PER_SEC;
+	size_t memory_used = end.ps.PagefileUsage - start.ps.PagefileUsage;
+
+    metric2csv(
+		filename,
+		operation,
+
+		x,
+		to_string(time_spent).c_str(),
+        z,
+		
+        xtype,
+		"time",
+		"allocator",
+
+		xunit,
+		"seconds",
+		zunit
+	);
+
+    metric2csv(
+		filename,
+		operation,
+
+		x,
+		to_string(memory_used).c_str(),
+		z,
+
+		xtype,
+		"memory",
+		"allocator",
+
+		xunit,
+		"bytes",
+		zunit
+	);
+}
 
 
 double euclideanDistance(const double* a, const double* b, size_t dimensions) {
@@ -232,6 +295,7 @@ void matmult_affine(double** A, double** B, double** C, size_t m, size_t n, size
 
 
 int knn_m(int argc, char* argv[]) {
+
     const char* allocator_name = "m";
 
     size_t datasetSize, dimensions, k;
@@ -244,6 +308,8 @@ int knn_m(int argc, char* argv[]) {
     datasetSize = atoi(argv[1]);
     dimensions = atoi(argv[2]);
     k = atoi(argv[3]);
+
+    state alloc_start = get_state();
 
     double** dataset_features = (double**)malloc(datasetSize * sizeof(double*));
     for (size_t i = 0; i < datasetSize; ++i) {
@@ -262,28 +328,48 @@ int knn_m(int argc, char* argv[]) {
 
     double* distances = (double*)malloc(datasetSize * sizeof(double));
 
-    clock_t start = clock();
-    knn(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
-    clock_t end = clock();
-    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    state alloc_end = get_state();
 
-    log_csv(
+    metrics2csv(
         "vcmalloc_rpibench_knn.csv",
-        "knn",
+        "knn_alloc",
 
         to_string(datasetSize).c_str(),
-        to_string(time_spent).c_str(),
         allocator_name,
 
         "dataset size",
-        "time",
         "allocator",
 
         "",
-        "seconds",
-        ""
+        "",
 
+        alloc_start,
+        alloc_end    
     );
+
+
+    state start = get_state();
+
+    knn(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
+    
+    state end = get_state();
+
+    metrics2csv(
+		"vcmalloc_rpibench_knn.csv",
+		"knn",
+
+		to_string(datasetSize).c_str(),
+		allocator_name,
+
+		"dataset size",
+		"allocator",
+
+        "",
+        "",
+
+        start,
+		end
+	);
 
 
     for (size_t i = 0; i < datasetSize; ++i) {
@@ -311,6 +397,8 @@ int knn_vcm(int argc, char* argv[]) {
 	datasetSize = atoi(argv[1]);
 	dimensions = atoi(argv[2]);
 	k = atoi(argv[3]);
+
+    state alloc_start = get_state();
 
 	size_t total_size =
 		datasetSize * sizeof(double*) +
@@ -347,27 +435,48 @@ int knn_vcm(int argc, char* argv[]) {
 
 	double* distances = (double*)vca_malloc(datasetSize * sizeof(double));
 
-	clock_t start = clock();
-	knn(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
-	clock_t end = clock();
-	double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    state alloc_end = get_state();
 
-    log_csv(
+    metrics2csv(
 		"vcmalloc_rpibench_knn.csv",
-		"knn",
+		"knn_alloc",
 
 		to_string(datasetSize).c_str(),
-		to_string(time_spent).c_str(),
 		allocator_name,
 
+		"dataset size",
+		"allocator",
+
+		"",
+		"",
+
+		alloc_start,
+		alloc_end
+	);
+
+    state start = get_state();
+
+	knn(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
+
+	state end = get_state();
+
+    metrics2csv(
+        "vcmalloc_rpibench_knn.csv",
+        "knn",
+
+        to_string(datasetSize).c_str(),
+        allocator_name,
+
         "dataset size",
-        "time",
         "allocator",
 
         "",
-        "seconds",
-        ""
+        "",
+
+        start,
+		end
     );
+
     hcm_clear(&hca_hcm);
 
 	return 0;
@@ -386,6 +495,8 @@ int knn_vcma(int argc, char* argv[]) {
 	datasetSize = atoi(argv[1]);
 	dimensions = atoi(argv[2]);
 	k = atoi(argv[3]);
+
+    state alloc_start = get_state();
 
 	size_t total_size =
 		datasetSize * sizeof(double*) +
@@ -422,27 +533,47 @@ int knn_vcma(int argc, char* argv[]) {
 
 	double* distances = (double*)vca_malloc(datasetSize * sizeof(double));
 
-	clock_t start = clock();
-	knn_affine(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
-	clock_t end = clock();
-	double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    state alloc_end = get_state();
 
-    log_csv(
-		"vcmalloc_rpibench_knn.csv",
-		"knn",
+    metrics2csv(
+        "vcmalloc_rpibench_knn.csv",
+        "knn_alloc",
 
-		to_string(datasetSize).c_str(),
-		to_string(time_spent).c_str(),
-		allocator_name,
+        to_string(datasetSize).c_str(),
+        allocator_name,
 
         "dataset size",
-		"time",
-		"allocator",
+        "allocator",
 
-		"",
-		"seconds",
-		""
-	);
+        "",
+        "",
+
+        alloc_start,
+        alloc_end
+    );
+
+    state start = get_state();
+
+	knn_affine(dataset_features, dataset_labels, datasetSize, testPoint_features, k, dimensions, nearestNeighbors, distances);
+	
+    state end = get_state();
+
+    metrics2csv(
+        "vcmalloc_rpibench_knn.csv",
+        "knn",
+
+        to_string(datasetSize).c_str(),
+        allocator_name,
+
+        "dataset size",
+        "allocator",
+
+        "",
+        "",
+
+        start,
+        end
+    );
 
     hcm_clear(&hca_hcm);
 
@@ -466,6 +597,8 @@ int kmeans_m(int argc, char* argv[]) {
         return 1;
     }
 
+    state alloc_start = get_state();
+
     double** points = (double**)malloc(pointsCount * sizeof(double*));
     for (size_t i = 0; i < pointsCount; ++i) {
         points[i] = (double*)malloc(dimensions * sizeof(double));
@@ -486,28 +619,46 @@ int kmeans_m(int argc, char* argv[]) {
 
     size_t* count = (size_t*)malloc(k * sizeof(size_t));
 
-    clock_t start = clock();
+    state alloc_end = get_state();
+
+    metrics2csv(
+		"vcmalloc_rpibench_kmeans.csv",
+		"kmeans_alloc",
+
+		to_string(pointsCount).c_str(),
+		allocator_name,
+
+		"dataset size",
+		"allocator",
+
+		"",
+		"",
+
+		alloc_start,
+		alloc_end
+	);
+
+    state start = get_state();
     kmeans(centroids, points, assignments, count, k, pointsCount, dimensions, maxIterations);
-    clock_t end = clock();
+    state end = get_state();
 
-    double elapsed = ((double)(end - start)) / CLOCKS_PER_SEC;
+    metrics2csv(
+		"vcmalloc_rpibench_kmeans.csv",
+		"kmeans",
 
-    log_csv(
-        "vcmalloc_rpibench_kmeans.csv",
-        "kmeans",
+		to_string(pointsCount).c_str(),
+		allocator_name,
 
-        to_string(pointsCount).c_str(),
-        to_string(elapsed).c_str(),
-        allocator_name,
+		"dataset size",
+		"allocator",
 
-        "dataset size",
-        "time",
-        "allocator",
+		"",
+		"",
 
-        "",
-        "seconds",
-        ""
-    );
+		start,
+		end
+	);
+
 
     for (size_t i = 0; i < k; ++i) {
         free(centroids[i]);
@@ -540,6 +691,8 @@ int kmeans_vcm(int argc, char* argv[]) {
         printf("Usage: %s <pointsCount> <dimensions> <k> <Iterations>\n", argv[0]);
         return 1;
     }
+
+    state alloc_start = get_state();
 
     size_t total_size =
         pointsCount * sizeof(double*) +
@@ -580,27 +733,44 @@ int kmeans_vcm(int argc, char* argv[]) {
 
     size_t* count = (size_t*)vca_malloc(k * sizeof(size_t));
 
-    clock_t start = clock();
+    state alloc_end = get_state();
+
+    metrics2csv(
+		"vcmalloc_rpibench_kmeans.csv",
+		"kmeans_alloc",
+
+		to_string(pointsCount).c_str(),
+		allocator_name,
+
+		"dataset size",
+		"allocator",
+
+		"",
+		"",
+
+		alloc_start,
+		alloc_end
+	);
+
+    state start = get_state();
     kmeans(centroids, points, assignments, count, k, pointsCount, dimensions, maxIterations);
-    clock_t end = clock();
+    state end = get_state();
 
-    double elapsed = ((double)(end - start)) / CLOCKS_PER_SEC;
-
-    log_csv(
+    metrics2csv(
         "vcmalloc_rpibench_kmeans.csv",
         "kmeans",
 
         to_string(pointsCount).c_str(),
-        to_string(elapsed).c_str(),
         allocator_name,
 
         "dataset size",
-        "time",
         "allocator",
 
         "",
-        "seconds",
-        ""
+        "",
+
+        start,
+        end
     );
 
     hcm_clear(&hca_hcm);
@@ -623,6 +793,8 @@ int kmeans_vcma(int argc, char* argv[]) {
         printf("Usage: %s <pointsCount> <dimensions> <k> <Iterations>\n", argv[0]);
         return 1;
     }
+
+    state alloc_start = get_state();
 
     size_t total_size =
         pointsCount * sizeof(double*) +
@@ -663,27 +835,44 @@ int kmeans_vcma(int argc, char* argv[]) {
 
     size_t* count = (size_t*)vca_malloc(k * sizeof(size_t));
 
-    clock_t start = clock();
+    state alloc_end = get_state();
+
+    metrics2csv(
+		"vcmalloc_rpibench_kmeans.csv",
+		"kmeans_alloc",
+
+		to_string(pointsCount).c_str(),
+		allocator_name,
+
+		"dataset size",
+		"allocator",
+
+		"",
+		"",
+
+		alloc_start,
+		alloc_end
+	);
+
+    state start = get_state();
     kmeans_affine(centroids, points, assignments, count, k, pointsCount, dimensions, maxIterations);
-    clock_t end = clock();
+    state end = get_state();
 
-    double elapsed = ((double)(end - start)) / CLOCKS_PER_SEC;
-
-    log_csv(
+    metrics2csv(
         "vcmalloc_rpibench_kmeans.csv",
         "kmeans",
 
         to_string(pointsCount).c_str(),
-        to_string(elapsed).c_str(),
         allocator_name,
 
         "dataset size",
-        "time",
         "allocator",
 
         "",
-        "seconds",
-        ""
+        "",
+
+        start,
+        end
     );
 
     hcm_clear(&hca_hcm);
@@ -707,6 +896,8 @@ int matmult_m(int argc, char* argv[]) {
 	n = atoi(argv[2]);
 	p = atoi(argv[3]);
 
+    state alloc_start = get_state();
+
 	double** A = (double**)malloc(m * sizeof(double*));
     for (size_t i = 0; i < m; ++i) {
 		A[i] = (double*)malloc(n * sizeof(double));
@@ -724,7 +915,7 @@ int matmult_m(int argc, char* argv[]) {
 		C[i] = (double*)malloc(p * sizeof(double));
 	}
 
-    clock_t start = clock();
+    state start = get_state();
     for (size_t i = 0; i < m; ++i) {
         for (size_t j = 0; j < n; ++j)
             A[i][j] = i * n + j;
@@ -739,48 +930,64 @@ int matmult_m(int argc, char* argv[]) {
 		for (size_t j = 0; j < p; ++j)
 			C[i][j] = 0.0;
 	}
-    clock_t end = clock();
+    state end = get_state();
 
-    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    state alloc_end = get_state();
 
-    log_csv(
+    metrics2csv(
+        "vcmalloc_rpibench_matmult.csv",
+		"matmult_alloc",
+
+		to_string(m).c_str(),
+		allocator_name,
+
+		"matrix order",
+		"allocator",
+
+		"NxN",
+		"",
+
+		alloc_start,
+        alloc_end
+	);
+
+    metrics2csv(
         "vcmalloc_rpibench_matmult.csv",
         "linear access",
 
         to_string(m).c_str(),
-        to_string(time_spent).c_str(),
         allocator_name,
-        
+
         "matrix order",
-        "time",
         "allocator",
 
         "NxN",
-        "seconds",
-        ""
+        "",
+
+        start,
+		end
     );
 
-	start = clock();
+	start = get_state();
 	matmult(A, B, C, m, n, p);
-	end = clock();
-	time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    end = get_state();
 
-    log_csv(
+    metrics2csv(
 		"vcmalloc_rpibench_matmult.csv",
 		"matmult",
 
 		to_string(m).c_str(),
-		to_string(time_spent).c_str(),
 		allocator_name,
 
 		"matrix order",
-		"time",
 		"allocator",
 
 		"NxN",
-		"seconds",
-		""
-	);
+		"",
+
+		start,
+        end
+    );
 
     for (size_t i = 0; i < m; ++i) {
 		free(A[i]);
@@ -814,6 +1021,8 @@ int matmult_vcm(int argc, char* argv[]) {
     m = atoi(argv[1]);
     n = atoi(argv[2]);
     p = atoi(argv[3]);
+
+    state alloc_start = get_state();
 
     size_t total_size =
 		m * sizeof(double*) +
@@ -852,7 +1061,7 @@ int matmult_vcm(int argc, char* argv[]) {
         C[i] = (double*)vca_malloc(p * sizeof(double));
     }
 
-    clock_t start = clock();
+    state start = get_state();
     for (size_t i = 0; i < m; ++i) {
         for (size_t j = 0; j < n; ++j)
             A[i][j] = i * n + j;
@@ -867,47 +1076,63 @@ int matmult_vcm(int argc, char* argv[]) {
         for (size_t j = 0; j < p; ++j)
             C[i][j] = 0.0;
     }
-    clock_t end = clock();
+    state end = get_state();
 
-    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    state alloc_end = get_state();
 
-    log_csv(
+    metrics2csv(
+		"vcmalloc_rpibench_matmult.csv",
+		"matmult_alloc",
+
+		to_string(m).c_str(),
+		allocator_name,
+
+		"matrix order",
+		"allocator",
+
+		"NxN",
+		"",
+
+		alloc_start,
+		alloc_end
+	);
+
+    metrics2csv(
         "vcmalloc_rpibench_matmult.csv",
         "linear access",
 
         to_string(m).c_str(),
-        to_string(time_spent).c_str(),
         allocator_name,
 
         "matrix order",
-        "time",
         "allocator",
 
         "NxN",
-        "seconds",
-        ""
+        "",
+
+        start,
+        end
     );
 
-    start = clock();
+    start = get_state();
     matmult(A, B, C, m, n, p);
-    end = clock();
-    time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    end = get_state();
 
-    log_csv(
+    metrics2csv(
         "vcmalloc_rpibench_matmult.csv",
         "matmult",
 
         to_string(m).c_str(),
-        to_string(time_spent).c_str(),
         allocator_name,
 
         "matrix order",
-        "time",
         "allocator",
 
         "NxN",
-        "seconds",
-        ""
+        "",
+
+        start,
+        end
     );
 
     hcm_clear(&hca_hcm);
@@ -929,6 +1154,8 @@ int matmult_vcma(int argc, char* argv[]) {
     m = atoi(argv[1]);
     n = atoi(argv[2]);
     p = atoi(argv[3]);
+
+    state alloc_start = get_state();
 
     size_t total_size =
         m * sizeof(double*) +
@@ -967,7 +1194,7 @@ int matmult_vcma(int argc, char* argv[]) {
         C[i] = (double*)vca_malloc(p * sizeof(double));
     }
 
-    clock_t start = clock();
+    state start = get_state();
 
     double * affine_A = A[0];
     double * affine_B = B[0];
@@ -990,48 +1217,64 @@ int matmult_vcma(int argc, char* argv[]) {
             //C[i][j] = 0.0;
             affine_C[i * p + j] = 0.0;
     }
-    clock_t end = clock();
+    state end = get_state();
 
-    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    state alloc_end = get_state();
 
-    log_csv(
+    metrics2csv(
         "vcmalloc_rpibench_matmult.csv",
-        "linear access",
+        "matmult_alloc",
 
         to_string(m).c_str(),
-        to_string(time_spent).c_str(),
         allocator_name,
 
         "matrix order",
-        "time",
         "allocator",
 
         "NxN",
-        "seconds",
-        ""
+        "",
+
+        alloc_start,
+        alloc_end
     );
 
-    start = clock();
+    metrics2csv(
+		"vcmalloc_rpibench_matmult.csv",
+		"linear access",
+
+		to_string(m).c_str(),
+		allocator_name,
+
+		"matrix order",
+		"allocator",
+
+		"NxN",
+		"",
+
+		start,
+		end
+	);
+
+    start = get_state();
     matmult_affine(A, B, C, m, n, p);
-    end = clock();
-    time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    end = get_state();
 
-    log_csv(
-        "vcmalloc_rpibench_matmult.csv",
-        "matmult",
+    metrics2csv(
+		"vcmalloc_rpibench_matmult.csv",
+		"matmult",
 
-        to_string(m).c_str(),
-        to_string(time_spent).c_str(),
-        allocator_name,
+		to_string(m).c_str(),
+		allocator_name,
 
-        "matrix order",
-        "time",
-        "allocator",
+		"matrix order",
+		"allocator",
 
-        "NxN",
-        "seconds",
-        ""
-    );
+		"NxN",
+		"",
+
+		start,
+		end
+	);
 
     hcm_clear(&hca_hcm);
 
