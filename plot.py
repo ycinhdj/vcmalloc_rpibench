@@ -12,6 +12,8 @@ reference = ['ch', 'm', 'ml'] #reference for percentages
 xabbreviation_type = "Bytes"
 yabbreviation_type = "Normal"
 
+results_path = "./results"
+
 
 def abbreviate_number(number, abbreviation_type = "Normal"):
     #convert number from string to float
@@ -41,7 +43,7 @@ def abbreviate_number(number, abbreviation_type = "Normal"):
 
 bnw =['lightgray','dimgray','darkgray','black','silver','gray','darkslategray','slategray','lightslategrey','gainsboro','whitesmoke','white']
 
-files = [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith(".csv")]
+files = [f for f in os.listdir(results_path) if os.path.isfile(f) and f.endswith(".csv")]
 
 max_length = max(len(f) for f in files) if files else 0
 
